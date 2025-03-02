@@ -4,7 +4,21 @@ using System.Net.Sockets;
 using k8s;
 using k8s.Models;
 
-namespace KubePortal.Core.Forwarders;
+namespace KubePortal.Core;
+
+public interface IForwarder : IAsyncDisposable
+{
+    // Properties
+    ForwardDefinition Definition { get; }
+    bool IsActive { get; }
+    DateTime? StartTime { get; }
+    int ConnectionCount { get; }
+    long BytesTransferred { get; }
+
+    // Lifecycle
+    Task StartAsync(CancellationToken cancellationToken);
+    Task StopAsync(CancellationToken cancellationToken = default);
+}
 
 public abstract class ForwarderBase : IForwarder
 {
@@ -135,21 +149,6 @@ public abstract class ForwarderBase : IForwarder
         _cts.Dispose();
     }
 }
-
-public interface IForwarder : IAsyncDisposable
-{
-    // Properties
-    ForwardDefinition Definition { get; }
-    bool IsActive { get; }
-    DateTime? StartTime { get; }
-    int ConnectionCount { get; }
-    long BytesTransferred { get; }
-
-    // Lifecycle
-    Task StartAsync(CancellationToken cancellationToken);
-    Task StopAsync(CancellationToken cancellationToken = default);
-}
-
 
 public class KubernetesForwarder : ForwarderBase
 {

@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace KubePortal.Core.Management;
+namespace KubePortal.Core;
 
 public class ForwardManager : IAsyncDisposable
 {

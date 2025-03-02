@@ -6,6 +6,4 @@ global using System.Linq;
 global using System.Collections.Generic;
 global using Microsoft.Extensions.Logging;
 
-global using KubePortal.Core.Forwarders;
-global using KubePortal.Core.Models;
-global using KubePortal.Core.Management;
+global using KubePortal.Core;

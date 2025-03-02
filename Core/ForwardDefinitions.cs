@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace KubePortal.Core.Models;
+namespace KubePortal.Core;
 
 public abstract class ForwardDefinition
 {
