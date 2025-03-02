@@ -1,12 +1,4 @@
-using System;
-using System.IO;
 using System.Net.Sockets;
-using System.Threading;
-using System.Threading.Tasks;
-using k8s;
-using KubePortal.Core.Management;
-using KubePortal.Core.Models;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

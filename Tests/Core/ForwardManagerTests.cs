@@ -1,14 +1,4 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
-using System.Threading.Tasks;
-using KubePortal.Core.Forwarders;
-using KubePortal.Core.Management;
-using KubePortal.Core.Models;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 

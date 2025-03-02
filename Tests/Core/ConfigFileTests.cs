@@ -1,9 +1,3 @@
-using System;
-using System.IO;
-using System.Threading.Tasks;
-using KubePortal.Core.Management;
-using KubePortal.Core.Models;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using System.Text.Json.Nodes;

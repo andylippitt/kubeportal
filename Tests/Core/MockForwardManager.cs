@@ -1,7 +1,3 @@
-using System.Text.Json.Nodes;
-using KubePortal.Core.Management;
-using KubePortal.Core.Models;
-using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace KubePortal.Tests.Core;
@@ -66,7 +62,7 @@ public class MockForwardManager : ForwardManager
     protected override async Task<bool> StartForwardInternalAsync(ForwardDefinition forward)
     {
         await Task.CompletedTask;
-        
+
         // Create a mock forwarder that simulates success
         var mockForwarder = new Mock<IForwarder>();
         mockForwarder.Setup(f => f.Definition).Returns(forward);

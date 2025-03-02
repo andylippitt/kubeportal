@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using KubePortal.Core.Models;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
