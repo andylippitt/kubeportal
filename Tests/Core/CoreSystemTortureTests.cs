@@ -5,7 +5,7 @@ using System.Text;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace KubePortal.Tests.Torture;
+namespace KubePortal.Tests.Core;
 
 public class CoreSystemTortureTests : IDisposable
 {
