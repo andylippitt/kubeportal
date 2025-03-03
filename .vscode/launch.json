@@ -1,0 +1,27 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "C#: KubePortal Debug",
+			"type": "coreclr",
+			"request": "launch",
+			"preLaunchTask": "build",
+			"program": "${workspaceFolder}/KubePortal/bin/Debug/net8.0/kubeportal",
+			"args": [
+				"--internal-daemon-run"
+			],
+		},
+		{
+			"name": "Run Extension",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}/KubePortal.VSCode"
+			],
+			"outFiles": [
+				"${workspaceFolder}/KubePortal.VSCode/dist/**/*.js"
+			],
+			"preLaunchTask": "npm: watch"
+		}
+	]
+}

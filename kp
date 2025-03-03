@@ -1,0 +1,15 @@
+#!/bin/bash
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+
+PROJECT_PATH="$DIR/KubePortal/KubePortal.csproj"
+DLL_PATH="$DIR/KubePortal/bin/Debug/net*/kubeportal"
+# Check if the DLL exists (using wildcard for any .NET version)
+if ! ls $DLL_PATH &>/dev/null; then
+    echo "Building cli..."
+    dotnet build "$PROJECT_PATH"
+fi
+
+# Run the project with --no-build when the DLL exists
+dotnet run --project "$PROJECT_PATH" --no-build  --no-restore -- "$@"

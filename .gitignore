@@ -309,3 +309,5 @@ debug.config.json
 support/data/
 *.lock
 .mono
+
+dist/

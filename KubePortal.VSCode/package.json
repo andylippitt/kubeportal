@@ -1,0 +1,174 @@
+{
+  "name": "kubeportal-vscode",
+  "displayName": "KubePortal",
+  "description": "Kubernetes port forwarding and TCP proxy management",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "LICENSE.md"
+  ],
+
+  "contributes": {
+    "commands": [
+      {
+        "command": "kubeportal.startDaemon",
+        "title": "KubePortal: Start Daemon"
+      },
+      {
+        "command": "kubeportal.stopDaemon",
+        "title": "KubePortal: Stop Daemon"
+      },
+      {
+        "command": "kubeportal.refreshForwards",
+        "title": "KubePortal: Refresh Forwards",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kubeportal.createForward",
+        "title": "KubePortal: Create Forward",
+        "icon": "$(add)"
+      },
+      {
+        "command": "kubeportal.startForward",
+        "title": "Start Forward"
+      },
+      {
+        "command": "kubeportal.stopForward",
+        "title": "Stop Forward"
+      },
+      {
+        "command": "kubeportal.deleteForward",
+        "title": "Delete Forward"
+      },
+      {
+        "command": "kubeportal.enableGroup",
+        "title": "Enable Group"
+      },
+      {
+        "command": "kubeportal.disableGroup",
+        "title": "Disable Group"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "kubeportalView",
+          "name": "KubePortal"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "kubeportal.refreshForwards",
+          "when": "view == kubeportalView",
+          "group": "navigation"
+        },
+        {
+          "command": "kubeportal.createForward",
+          "when": "view == kubeportalView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "kubeportal.startForward",
+          "when": "viewItem == forward-disabled",
+          "group": "inline"
+        },
+        {
+          "command": "kubeportal.stopForward",
+          "when": "viewItem == forward-enabled",
+          "group": "inline"
+        },
+        {
+          "command": "kubeportal.deleteForward",
+          "when": "viewItem =~ /forward-/"
+        },
+        {
+          "command": "kubeportal.enableGroup",
+          "when": "viewItem == group-disabled",
+          "group": "inline"
+        },
+        {
+          "command": "kubeportal.disableGroup",
+          "when": "viewItem == group-enabled",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "KubePortal",
+      "properties": {
+        "kubeportal.daemonPort": {
+          "type": "number",
+          "default": 50051,
+          "description": "Port for the KubePortal daemon"
+        },
+        "kubeportal.autoStartDaemon": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the KubePortal daemon on extension activation"
+        },
+        "kubeportal.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to KubePortal binary (leave empty for auto-detect)"
+        },
+        "kubeportal.protoPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to KubePortal proto file (leave empty for bundled proto)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "package-vsix": "mkdir -p ../bin && vsce package --allow-missing-repository --out ../bin",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^5.56.0",
+    "@typescript-eslint/parser": "^5.56.0",
+    "@vscode/test-electron": "^2.3.0",
+    "eslint": "^8.36.0",
+    "glob": "^8.1.0",
+    "grpc_tools_node_protoc_ts": "^5.3.3",
+    "grpc-tools": "^1.13.0",
+    "mocha": "^10.2.0",
+    "ts-loader": "^9.4.2",
+    "ts-proto": "^2.6.1",
+    "typescript": "^4.9.5",
+    "webpack": "^5.76.3",
+    "webpack-cli": "^5.0.1"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.8.14",
+    "@grpc/proto-loader": "^0.7.7",
+    "@vscode/vsce": "^3.2.2"
+  }
+}

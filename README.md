@@ -6,10 +6,6 @@
 
 KubePortal is a powerful command-line tool that simplifies port forwarding for both Kubernetes services and TCP sockets. It provides a unified interface for managing multiple port forwards with persistent configuration and background operation.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/username/kubeportal/main/docs/assets/kubeportal-logo.png" alt="KubePortal Logo" width="200"/>
-</p>
-
 ## 🚀 Features
 
 - **Multiple Forward Types**:
@@ -33,8 +29,7 @@ KubePortal is a powerful command-line tool that simplifies port forwarding for b
 
 ```bash
 git clone https://github.com/andylippitt/kubeportal.git
-cd kubeportal
-dotnet build
+cd kubeportal/KubePortal
 dotnet run -- --help
 ```
 
