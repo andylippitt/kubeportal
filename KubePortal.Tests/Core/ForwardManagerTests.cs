@@ -1,4 +1,6 @@
 using System.Text.Json;
+using KubePortal.Core;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 

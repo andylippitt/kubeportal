@@ -1,6 +1,8 @@
 using Moq;
 using Xunit;
 using System.Text.Json.Nodes;
+using KubePortal.Core;
+using Microsoft.Extensions.Logging;
 
 namespace KubePortal.Tests.Core;
 

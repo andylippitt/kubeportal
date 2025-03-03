@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using KubePortal.Core;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 

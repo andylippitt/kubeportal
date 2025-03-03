@@ -1,3 +1,5 @@
+using KubePortal.Core;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace KubePortal.Tests.Core;

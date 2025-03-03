@@ -1,4 +1,6 @@
 using System.Net.Sockets;
+using KubePortal.Core;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

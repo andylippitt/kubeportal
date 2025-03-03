@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KubePortal", "KubePortal.csproj", "{C02E0CB1-4D1B-4D4F-A8A5-625616F02115}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KubePortal", "KubePortal\KubePortal.csproj", "{FCD82744-E39F-4962-A7ED-EA02C7813758}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KubePortal.Tests", "KubePortal.Tests\KubePortal.Tests.csproj", "{AAFCE361-8BB4-47DB-8883-7EB7C55C6233}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,9 +16,13 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{C02E0CB1-4D1B-4D4F-A8A5-625616F02115}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C02E0CB1-4D1B-4D4F-A8A5-625616F02115}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C02E0CB1-4D1B-4D4F-A8A5-625616F02115}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C02E0CB1-4D1B-4D4F-A8A5-625616F02115}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FCD82744-E39F-4962-A7ED-EA02C7813758}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FCD82744-E39F-4962-A7ED-EA02C7813758}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FCD82744-E39F-4962-A7ED-EA02C7813758}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FCD82744-E39F-4962-A7ED-EA02C7813758}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AAFCE361-8BB4-47DB-8883-7EB7C55C6233}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AAFCE361-8BB4-47DB-8883-7EB7C55C6233}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AAFCE361-8BB4-47DB-8883-7EB7C55C6233}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AAFCE361-8BB4-47DB-8883-7EB7C55C6233}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

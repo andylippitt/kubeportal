@@ -1,0 +1,215 @@
+syntax = "proto3";
+
+package kubeportal;
+
+option csharp_namespace = "KubePortal.Grpc";
+
+// The KubePortal service definition
+service KubePortalService {
+  // Forward management
+  rpc CreateForward(CreateForwardRequest) returns (CreateForwardResponse);
+  rpc DeleteForward(DeleteForwardRequest) returns (DeleteForwardResponse);
+  rpc ListForwards(ListForwardsRequest) returns (ListForwardsResponse);
+  rpc StartForward(StartForwardRequest) returns (StartForwardResponse);
+  rpc StopForward(StopForwardRequest) returns (StopForwardResponse);
+  rpc GetForward(GetForwardRequest) returns (GetForwardResponse);
+
+  // Group management
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse);
+  rpc EnableGroup(EnableGroupRequest) returns (EnableGroupResponse);
+  rpc DisableGroup(DisableGroupRequest) returns (DisableGroupResponse);
+
+  // Configuration management
+  rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
+  rpc ExportConfig(ExportConfigRequest) returns (ExportConfigResponse);
+  rpc ReloadConfig(ReloadConfigRequest) returns (ReloadConfigResponse);
+
+  // Daemon control
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+// Forward types
+enum ForwardType {
+  SOCKET = 0;
+  KUBERNETES = 1;
+}
+
+// A forward definition
+message ForwardDefinition {
+  string name = 1;
+  string group = 2;
+  int32 local_port = 3;
+  bool enabled = 4;
+  ForwardType type = 5;
+  
+  // Socket-specific fields
+  string remote_host = 10;
+  int32 remote_port = 11;
+  
+  // Kubernetes-specific fields
+  string context = 20;
+  string namespace = 21;
+  string service = 22;
+  int32 service_port = 23;
+}
+
+// Forward status information
+message ForwardStatus {
+  string name = 1;
+  bool active = 2;
+  int64 bytes_transferred = 3;
+  int32 connection_count = 4;
+  string start_time = 5; // ISO 8601 format
+}
+
+// Group status information
+message GroupStatus {
+  string name = 1;
+  bool enabled = 2;
+  int32 forward_count = 3;
+  int32 active_forward_count = 4;
+}
+
+// Create forward
+message CreateForwardRequest {
+  ForwardDefinition forward = 1;
+}
+
+message CreateForwardResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Delete forward
+message DeleteForwardRequest {
+  string name = 1;
+}
+
+message DeleteForwardResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// List forwards
+message ListForwardsRequest {
+  string group_filter = 1; // optional group filter
+}
+
+message ListForwardsResponse {
+  repeated ForwardDefinition forwards = 1;
+  repeated ForwardStatus statuses = 2;
+}
+
+// Get forward
+message GetForwardRequest {
+  string name = 1;
+}
+
+message GetForwardResponse {
+  bool found = 1;
+  ForwardDefinition forward = 2;
+  ForwardStatus status = 3;
+}
+
+// Start forward
+message StartForwardRequest {
+  string name = 1;
+}
+
+message StartForwardResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Stop forward
+message StopForwardRequest {
+  string name = 1;
+}
+
+message StopForwardResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// List groups
+message ListGroupsRequest {
+}
+
+message ListGroupsResponse {
+  repeated GroupStatus groups = 1;
+}
+
+// Enable group
+message EnableGroupRequest {
+  string name = 1;
+}
+
+message EnableGroupResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Disable group
+message DisableGroupRequest {
+  string name = 1;
+}
+
+message DisableGroupResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Apply configuration
+message ApplyConfigRequest {
+  string config_json = 1;
+  string target_group = 2; // optional target group
+  bool remove_missing = 3; // remove missing forwards
+}
+
+message ApplyConfigResponse {
+  bool success = 1;
+  int32 added_count = 2;
+  int32 updated_count = 3;
+  int32 removed_count = 4;
+  string error = 5;
+}
+
+// Export configuration
+message ExportConfigRequest {
+  bool include_disabled = 1;
+  string group_filter = 2; // optional group filter
+}
+
+message ExportConfigResponse {
+  string config_json = 1;
+}
+
+// Reload configuration
+message ReloadConfigRequest {
+}
+
+message ReloadConfigResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Get daemon status
+message GetStatusRequest {
+}
+
+message GetStatusResponse {
+  bool running = 1;
+  string version = 2;
+  int32 active_forward_count = 3;
+  int32 total_forward_count = 4;
+  int64 uptime_seconds = 5;
+}
+
+// Shutdown the daemon
+message ShutdownRequest {
+}
+
+message ShutdownResponse {
+  bool success = 1;
+}
