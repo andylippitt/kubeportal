@@ -3,7 +3,7 @@ import * as protoLoader from '@grpc/proto-loader';
 import { resolve } from 'path';
 
 // Path to your proto file
-const PROTO_PATH = resolve(__dirname, '../../KubePortal/Grpc/kubeportal.proto ');
+const PROTO_PATH = resolve(__dirname, "../proto/kubeportal.proto");
 
 // Load the proto file with options
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {

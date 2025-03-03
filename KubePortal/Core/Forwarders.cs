@@ -246,35 +246,41 @@ public class KubernetesForwarder : ForwarderBase
         return podList.Items;
     }
 
-    private async Task CopyStreamAsync(Stream source, Stream destination, CancellationToken token)
+    private Task CopyStreamAsync(Stream source, Stream destination, CancellationToken token)
     {
-        const int bufferSize = 81920; // 80KB buffer
-        var buffer = new byte[bufferSize];
-
-        try
+        return Task.Run(() =>
         {
-            int read;
-            long totalTransferred = 0;
-
-            while ((read = await source.ReadAsync(buffer, 0, buffer.Length, token)) > 0)
+            using var registration = token.Register(() =>
             {
-                await destination.WriteAsync(buffer, 0, read, token);
+                try
+                {
+                    // Force stream closure on cancellation
+                    source.Close();
+                }
+                catch { /* Ignore */ }
+            });
 
-                // Update the counter with atomic operations
-                totalTransferred += read;
-                Interlocked.Add(ref _totalBytesTransferred, read);
+            try
+            {
+                // Register for bytes read
+                var buffer = new byte[81920];
+                int bytesRead;
+                while ((bytesRead = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    destination.Write(buffer, 0, bytesRead);
+                    UpdateBytesTransferred(bytesRead);
+                }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected during cancellation
-        }
-        catch (Exception ex)
-        {
-            // Only log unexpected errors
-            if (!token.IsCancellationRequested)
-                _logger.LogError(ex, "Error copying stream");
-        }
+            catch (OperationCanceledException)
+            {
+                // Expected during cancellation
+            }
+            catch (Exception ex)
+            {
+                if (!token.IsCancellationRequested)
+                    _logger.LogError(ex, "Error copying stream");
+            }
+        }, token);
     }
 }
 

@@ -13,13 +13,12 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
-
   "files": [
     "dist/**/*",
+    "proto/**/*",
     "package.json",
     "LICENSE.md"
   ],
-
   "contributes": {
     "commands": [
       {
