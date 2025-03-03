@@ -472,21 +472,24 @@ public class ForwardManager : IAsyncDisposable
             _activeForwarders.TryRemove(name, out _);
             _logger.LogInformation("Stopped forward '{Name}'", name);
 
-            // Update enabled state if persistence is enabled
-            await _configLock.WaitAsync();
-            try
+            // Update enabled state if persistence is enabled and not shutting down
+            if (!_isShuttingDown)
             {
-                if (_configuredForwards.TryGetValue(name, out var forward))
+                await _configLock.WaitAsync();
+                try
                 {
-                    forward.Enabled = false;
+                    if (_configuredForwards.TryGetValue(name, out var forward))
+                    {
+                        forward.Enabled = false;
 
-                    if (_persistenceEnabled)
-                        await SaveConfigAsync();
+                        if (_persistenceEnabled)
+                            await SaveConfigAsync();
+                    }
                 }
-            }
-            finally
-            {
-                _configLock.Release();
+                finally
+                {
+                    _configLock.Release();
+                }
             }
 
             return true;
@@ -499,13 +502,28 @@ public class ForwardManager : IAsyncDisposable
     }
 
     // Stop all forwards
-    public async Task StopAllAsync()
+    public async Task StopAllAsync(bool isShuttingDown = true)
     {
+        _isShuttingDown = isShuttingDown;
         var names = _activeForwarders.Keys.ToArray();
         foreach (var name in names)
         {
-            await StopForwardAsync(name);
+            // Special handling during shutdown - don't change config
+            if (isShuttingDown)
+            {
+                if (_activeForwarders.TryGetValue(name, out var forwarder))
+                {
+                    await forwarder.StopAsync();
+                    _activeForwarders.TryRemove(name, out _);
+                }
+            }
+            else
+            {
+                // Normal operation - use standard stop method that updates config
+                await StopForwardAsync(name);
+            }
         }
+        _isShuttingDown = false;
     }
 
     // Group status related methods
@@ -648,6 +666,56 @@ public class ForwardManager : IAsyncDisposable
         return _activeForwarders;
     }
 
+    // Delete all forwards in a group
+    public async Task<(bool Success, int DeletedCount, string Error)> DeleteGroupAsync(string groupName)
+    {
+        await _configLock.WaitAsync();
+        try
+        {
+            // Find all forwards in this group
+            var groupForwards = _configuredForwards.Values
+                .Where(f => f.Group == groupName)
+                .ToList();
+
+            if (!groupForwards.Any())
+            {
+                return (false, 0, $"Group '{groupName}' not found or contains no forwards");
+            }
+
+            int deletedCount = 0;
+
+            foreach (var forward in groupForwards)
+            {
+                // Stop if running
+                if (_activeForwarders.TryGetValue(forward.Name, out var forwarder))
+                {
+                    await forwarder.StopAsync();
+                    _activeForwarders.TryRemove(forward.Name, out _);
+                }
+
+                // Remove from config
+                _configuredForwards.Remove(forward.Name);
+                deletedCount++;
+            }
+
+            // Save changes
+            if (_persistenceEnabled && deletedCount > 0)
+                await SaveConfigAsync();
+
+            _logger.LogInformation("Deleted {Count} forwards from group '{Group}'", deletedCount, groupName);
+            return (true, deletedCount, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting group '{Group}'", groupName);
+            return (false, 0, ex.Message);
+        }
+        finally
+        {
+            _configLock.Release();
+        }
+    }
+
     // IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
@@ -655,4 +723,6 @@ public class ForwardManager : IAsyncDisposable
         _configLock?.Dispose();
         _configWatcher?.Dispose();
     }
+
+    private bool _isShuttingDown = false;
 }

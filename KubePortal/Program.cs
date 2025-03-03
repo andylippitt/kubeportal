@@ -84,6 +84,7 @@ static async Task<int> RunCliAsync(string[] args)
             group.AddCommand<GroupListCommand>("list");
             group.AddCommand<GroupEnableCommand>("enable");
             group.AddCommand<GroupDisableCommand>("disable");
+            group.AddCommand<GroupDeleteCommand>("delete");
         });
         
         // Register configuration commands

@@ -181,3 +181,54 @@ public class GroupDisableCommand : AsyncCommand<GroupDisableCommand.Settings>
         }
     }
 }
+
+[Description("Delete a forward group and all its forwards")]
+public class GroupDeleteCommand : AsyncCommand<GroupDeleteCommand.Settings>
+{
+    public class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "<NAME>")]
+        [Description("Name of the group to delete")]
+        public required string Name { get; set; }
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        using var client = new KubePortalClient(settings.ApiPort);
+        if (!await client.IsDaemonRunningAsync())
+        {
+            AnsiConsole.MarkupLine("[red]Daemon is not running.[/]");
+            return 1;
+        }
+
+        // Confirm deletion unless quiet mode or JSON mode
+        if (!settings.Quiet && !settings.Json)
+        {
+            if (!AnsiConsole.Confirm($"Are you sure you want to delete the group '{settings.Name}' and all its forwards?"))
+                return 0;
+        }
+
+        var (success, deletedCount, error) = await client.DeleteGroupAsync(settings.Name);
+        
+        if (success)
+        {
+            if (!settings.Quiet && !settings.Json)
+                AnsiConsole.MarkupLine($"[green]Group '{settings.Name}' deleted successfully with {deletedCount} forwards.[/]");
+                
+            if (settings.Json)
+                Console.WriteLine($"{{ \"success\": true, \"name\": \"{settings.Name}\", \"deletedCount\": {deletedCount} }}");
+                
+            return 0;
+        }
+        else
+        {
+            if (!settings.Json)
+                AnsiConsole.MarkupLine($"[red]Failed to delete group: {error}[/]");
+                
+            if (settings.Json)
+                Console.WriteLine($"{{ \"success\": false, \"error\": \"{error}\" }}");
+                
+            return 1;
+        }
+    }
+}

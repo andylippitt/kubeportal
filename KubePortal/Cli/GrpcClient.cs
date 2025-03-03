@@ -131,6 +131,13 @@ public class KubePortalClient : IAsyncDisposable, IDisposable
         return (response.Success, response.Error);
     }
 
+    public async Task<(bool Success, int DeletedCount, string Error)> DeleteGroupAsync(string name)
+    {
+        var request = new DeleteGroupRequest { Name = name };
+        var response = await _client.DeleteGroupAsync(request);
+        return (response.Success, response.DeletedCount, response.Error);
+    }
+
     // Configuration management
     public async Task<(bool Success, int Added, int Updated, int Removed, string Error)> ApplyConfigAsync(
         string configJson, string? targetGroup = null, bool removeMissing = false)

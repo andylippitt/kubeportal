@@ -306,6 +306,32 @@ public class KubePortalServiceImpl : KubePortalService.KubePortalServiceBase
             };
         }
     }
+
+    public override async Task<DeleteGroupResponse> DeleteGroup(DeleteGroupRequest request, ServerCallContext context)
+    {
+        _logger.LogInformation("Received DeleteGroup request for group '{Group}'", request.Name);
+        
+        try
+        {
+            var (success, deletedCount, error) = await _manager.DeleteGroupAsync(request.Name);
+            
+            return new DeleteGroupResponse
+            {
+                Success = success,
+                DeletedCount = deletedCount,
+                Error = error
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling DeleteGroup request for group '{Group}'", request.Name);
+            return new DeleteGroupResponse
+            {
+                Success = false,
+                Error = $"Internal error: {ex.Message}"
+            };
+        }
+    }
     
     #endregion
 
@@ -434,7 +460,7 @@ public class KubePortalServiceImpl : KubePortalService.KubePortalServiceBase
                 ActiveForwardCount = activeForwarders.Count,
                 TotalForwardCount = _manager.GetAllForwardsAsync().Result.Count,
                 UptimeSeconds = (long)uptime.TotalSeconds
-            });
+            }); 
         }
         catch (Exception ex)
         {
