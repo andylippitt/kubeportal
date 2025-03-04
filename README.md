@@ -1,77 +1,106 @@
 # KubePortal
 
-![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
-![License](https://img.shields.io/badge/License-MIT-blue)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen)
+<div align="center">
 
-KubePortal is a powerful command-line tool that simplifies port forwarding for both Kubernetes services and TCP sockets. It provides a unified interface for managing multiple port forwards with persistent configuration and background operation.
+![KubePortal Logo](https://via.placeholder.com/150x150.png?text=KubePortal)
 
-## 🚀 Features
+[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC)](KubePortal.VSCode)
 
-- **Multiple Forward Types**:
+**Simplified port forwarding for Kubernetes and TCP sockets**
+
+</div>
+
+## Overview
+
+KubePortal is a developer tool that simplifies port forwarding for both Kubernetes services and TCP sockets. It provides a unified interface for managing multiple port forwards with persistent configuration, background operation, and a VS Code extension for seamless integration with your IDE.
+
+## Key Features
+
+- **Multiple Forward Types**
   - 🌐 Kubernetes service port forwarding
   - 🔌 TCP socket proxying
-- **Daemon Process**: Run forwards in the background as a persistent service
-- **Group Management**: Organize forwards into logical groups that can be enabled/disabled together
-- **Persistent Configuration**: Save and load your port forwarding setup across sessions
-- **JSON Output**: Machine-readable output for integration with other tools and scripts
-- **Metrics & Monitoring**: Track bytes transferred and connection counts for each forward
-- **Robust CLI**: Rich command-line interface with comprehensive help and documentation
+- **Daemon Architecture**
+  - Persistent background service keeps forwards running
+  - gRPC-based communication between CLI and daemon
+- **Group Management**
+  - Organize forwards into logical groups
+  - Enable/disable entire groups with a single command
+- **VS Code Integration**
+  - Manage forwards directly from VS Code
+  - Visual status indicators for active forwards
+- **Robust CLI**
+  - Comprehensive command suite
+  - JSON output mode for scripting and automation
+- **Performance Metrics**
+  - Track bytes transferred and connection counts
+  - Monitor forward status in real-time
 
-## 📋 Requirements
+## Installation
+
+### Prerequisites
 
 - .NET 8.0 or later
-- For Kubernetes forwarding: Valid kubeconfig with appropriate access permissions
-
-## 🔧 Installation
+- For Kubernetes forwarding: valid kubeconfig with appropriate access permissions
 
 ### Build from Source
 
 ```bash
+# Clone the repository
 git clone https://github.com/andylippitt/kubeportal.git
-cd kubeportal/KubePortal
-dotnet run -- --help
+cd kubeportal
+
+# Build the CLI
+dotnet build
+
+# Optional: Install the VS Code extension
+cd KubePortal.VSCode
+npm install
+npm run package-vsix
+code --install-extension ../bin/kubeportal-vscode-0.1.0.vsix
 ```
 
-## 🏁 Quick Start
+## Getting Started
 
-### Starting the Daemon
-
-The KubePortal daemon needs to be running for port forwards to work:
+### Managing the Daemon
 
 ```bash
-# Start the daemon in the background
+# Start the daemon (required before using any forwards)
 kubeportal daemon start
 
 # Check daemon status
 kubeportal daemon status
+
+# Stop the daemon when finished
+kubeportal daemon stop
 ```
 
 ### Creating Port Forwards
-
-#### Kubernetes Service Forward
-
-```bash
-kubeportal forward create \
-  --name postgres-dev \
-  --local-port 5432 \
-  --type kubernetes \
-  --context my-cluster \
-  --namespace database \
-  --service postgres \
-  --service-port 5432 \
-  --group database
-```
 
 #### TCP Socket Forward
 
 ```bash
 kubeportal forward create \
-  --name redis-cache \
-  --local-port 6379 \
+  --name postgres-local \
+  --local-port 5432 \
   --type socket \
-  --remote-host redis.internal \
-  --remote-port 6379 \
+  --remote-host localhost \
+  --remote-port 5432 \
+  --group database
+```
+
+#### Kubernetes Service Forward
+
+```bash
+kubeportal forward create \
+  --name redis-k8s \
+  --local-port 6379 \
+  --type kubernetes \
+  --context my-cluster \
+  --namespace redis \
+  --service redis-master \
+  --service-port 6379 \
   --group cache
 ```
 
@@ -81,145 +110,169 @@ kubeportal forward create \
 # List all forwards
 kubeportal forward list
 
-# See detailed status in JSON format
-kubeportal forward list --json | jq
+# Start a specific forward
+kubeportal forward start redis-k8s
 
-# Start/stop specific forwards
-kubeportal forward start postgres-dev
-kubeportal forward stop postgres-dev
+# Stop a forward
+kubeportal forward stop redis-k8s
 
 # Delete a forward
-kubeportal forward delete redis-cache
+kubeportal forward delete postgres-local
 ```
 
-## 🧩 Working with Groups
-
-Groups allow you to manage related forwards together:
+### Working with Groups
 
 ```bash
-# List all groups with their status
+# List all groups
 kubeportal group list
 
 # Enable all forwards in a group
-kubeportal group enable database
+kubeportal group enable cache
 
 # Disable all forwards in a group
-kubeportal group disable cache
+kubeportal group disable database
+
+# Delete a group and all its forwards
+kubeportal group delete temporary-group
 ```
 
-## 📝 Configuration Management
+## Configuration Management
 
 KubePortal supports exporting and applying configuration from JSON files:
 
 ```bash
-# Export current configuration to a file
+# Export current configuration
 kubeportal export > kubeportal-config.json
 
-# Apply configuration
+# Apply configuration from a file
 kubeportal apply --file kubeportal-config.json
 
-# Apply configuration from stdin
-cat config.json | kubeportal apply --stdin
-
-# Apply with removal of missing forwards
+# Apply configuration with removal of missing forwards
 kubeportal apply --file config.json --remove-missing
+
+# Apply configuration to a specific group
+kubeportal apply --file config.json --group development
 ```
 
-### Example Configuration
+### Configuration Format
 
 ```json
 {
   "forwards": {
-    "postgres-dev": {
+    "redis-k8s": {
       "type": "kubernetes",
-      "name": "postgres-dev",
-      "group": "database",
-      "localPort": 5432,
-      "enabled": true,
-      "context": "my-cluster",
-      "namespace": "database",
-      "service": "postgres",
-      "servicePort": 5432
-    },
-    "redis-cache": {
-      "type": "socket",
-      "name": "redis-cache",
+      "name": "redis-k8s",
       "group": "cache",
       "localPort": 6379,
       "enabled": true,
-      "remoteHost": "redis.internal",
-      "remotePort": 6379
+      "context": "my-cluster",
+      "namespace": "redis",
+      "service": "redis-master",
+      "servicePort": 6379
+    },
+    "postgres-local": {
+      "type": "socket",
+      "name": "postgres-local",
+      "group": "database",
+      "localPort": 5432,
+      "enabled": true,
+      "remoteHost": "localhost",
+      "remotePort": 5432
     }
   }
 }
 ```
 
-## 🔍 Advanced Usage
+## VS Code Extension
+
+The KubePortal VS Code extension provides a graphical interface for managing your port forwards:
+
+- **Tree View**: See all your forwards organized by group
+- **Status Indicators**: Visual indicators for active/inactive forwards
+- **Quick Actions**: Start, stop, and delete forwards with a click
+- **Auto-Start**: Optionally start the daemon when VS Code launches
+
+### Extension Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `kubeportal.daemonPort` | Port for KubePortal daemon | 50051 |
+| `kubeportal.autoStartDaemon` | Start daemon when extension activates | `true` |
+| `kubeportal.autoRefreshInterval` | Interval for refreshing status (ms) | 5000 |
+| `kubeportal.shutdownOnExit` | Stop daemon when VS Code closes | `false` |
+| `kubeportal.showHistory` | Show connection history view | `true` |
+
+## Advanced Usage
 
 ### JSON Output
 
-Add `--json` to any command to get machine-readable JSON output:
+Add `--json` to most commands for machine-readable output:
 
 ```bash
 kubeportal forward list --json
 kubeportal daemon status --json
 ```
 
-### Daemon Control
+### Scriptable Operations
+
+Combining JSON output with `jq` for powerful scripting:
 
 ```bash
-# Start the daemon
-kubeportal daemon start
+# Get all active forwards
+kubeportal forward list --json | jq '.[] | select(.active == true)'
 
-# Check status
-kubeportal daemon status
-
-# Reload configuration
-kubeportal daemon reload
-
-# Stop the daemon
-kubeportal daemon stop
+# Count forwards by group
+kubeportal forward list --json | jq 'group_by(.group) | map({group: .[0].group, count: length})'
 ```
 
-### Command Options
+### Command Reference
 
 Common options available for most commands:
 
 | Option | Description |
 |--------|-------------|
-| `--api-port <PORT>` | Specify daemon API port (default: 50051) |
-| `--verbosity <LEVEL>` | Set logging level (Debug, Info, Warn, Error) |
-| `--quiet` | Minimal output, suitable for scripts |
+| `--api-port <PORT>` | Daemon API port (default: 50051) |
+| `--verbosity <LEVEL>` | Logging level (Debug, Info, Warn, Error) |
+| `--quiet` | Minimal output for scripts |
 | `--json` | Output in JSON format |
 
-## 🔧 Troubleshooting
+## Troubleshooting
+
+### Log Files
+
+Logs are stored in the following locations:
+
+- **Windows**: `%LOCALAPPDATA%\KubePortal\daemon.log`
+- **macOS**: `~/Library/Application Support/KubePortal/daemon.log`
+- **Linux**: `~/.kubeportal/daemon.log`
 
 ### Common Issues
 
 **"Daemon is not running" error**
-- Run `kubeportal daemon start` to start the daemon process
-- Check if another process is using the API port (default: 50051)
+- Run `kubeportal daemon start` to start the daemon
+- Check if something else is using port 50051 (or use `--api-port` to specify a different port)
 
 **"Address already in use" error**
-- The local port is already in use by another application
-- Choose a different port or stop the application using it
+- The local port for forwarding is already in use
+- Use `netstat -tuln | grep <port>` to identify the process using the port
 
 **Kubernetes connection issues**
-- Verify your kubeconfig context is valid: `kubectl --context=<context> get pods`
-- Check that the service exists: `kubectl --context=<context> -n <namespace> get svc <service>`
+- Verify your kubeconfig context: `kubectl config get-contexts`
+- Check service existence: `kubectl get svc -n <namespace>`
 
-### Logs
+## Architecture
 
-For more detailed logs, run the daemon with debug logging:
+KubePortal is built with a client-daemon architecture:
 
-```bash
-kubeportal daemon start --verbosity debug
-```
+1. **CLI Client**: The command-line interface that sends commands to the daemon
+2. **Daemon Process**: A background service that maintains active forwards
+3. **gRPC Communication**: Efficient, typed communication between client and daemon
+4. **VS Code Extension**: A UI layer that communicates with the daemon
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
