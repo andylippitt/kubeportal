@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -187,9 +188,9 @@ public class GroupDeleteCommand : AsyncCommand<GroupDeleteCommand.Settings>
 {
     public class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<NAME>")]
-        [Description("Name of the group to delete")]
-        public required string Name { get; set; }
+        [CommandArgument(0, "<NAMES>")]
+        [Description("Names of the groups to delete (space-separated)")]
+        public string[] Names { get; set; } = Array.Empty<string>();
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -201,34 +202,44 @@ public class GroupDeleteCommand : AsyncCommand<GroupDeleteCommand.Settings>
             return 1;
         }
 
-        // Confirm deletion unless quiet mode or JSON mode
-        if (!settings.Quiet && !settings.Json)
-        {
-            if (!AnsiConsole.Confirm($"Are you sure you want to delete the group '{settings.Name}' and all its forwards?"))
-                return 0;
-        }
+        // No confirmation prompt
 
-        var (success, deletedCount, error) = await client.DeleteGroupAsync(settings.Name);
+        var results = new List<(string Name, bool Success, int DeletedCount, string Error)>();
         
-        if (success)
+        foreach (var name in settings.Names)
         {
-            if (!settings.Quiet && !settings.Json)
-                AnsiConsole.MarkupLine($"[green]Group '{settings.Name}' deleted successfully with {deletedCount} forwards.[/]");
-                
-            if (settings.Json)
-                Console.WriteLine($"{{ \"success\": true, \"name\": \"{settings.Name}\", \"deletedCount\": {deletedCount} }}");
-                
-            return 0;
+            var (success, deletedCount, error) = await client.DeleteGroupAsync(name);
+            results.Add((name, success, deletedCount, error));
         }
-        else
+        
+        if (settings.Json)
         {
-            if (!settings.Json)
-                AnsiConsole.MarkupLine($"[red]Failed to delete group: {error}[/]");
-                
-            if (settings.Json)
-                Console.WriteLine($"{{ \"success\": false, \"error\": \"{error}\" }}");
-                
-            return 1;
+            var jsonArray = results.Select(r => new
+            {
+                name = r.Name,
+                success = r.Success,
+                deletedCount = r.DeletedCount,
+                error = r.Error
+            });
+            
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            Console.WriteLine(JsonSerializer.Serialize(jsonArray, options));
         }
+        else if (!settings.Quiet)
+        {
+            foreach (var result in results)
+            {
+                if (result.Success)
+                {
+                    AnsiConsole.MarkupLine($"[green]Group '{result.Name}' deleted successfully with {result.DeletedCount} forwards.[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[red]Failed to delete group '{result.Name}': {result.Error}[/]");
+                }
+            }
+        }
+        
+        return results.All(r => r.Success) ? 0 : 1;
     }
 }

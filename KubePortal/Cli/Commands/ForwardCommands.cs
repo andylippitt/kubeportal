@@ -360,12 +360,8 @@ public class ForwardDeleteCommand : AsyncCommand<ForwardDeleteCommand.Settings>
             return 1;
         }
 
-        // Confirm deletion unless quiet mode or JSON mode
-        if (!settings.Quiet && !settings.Json)
-        {
-            if (!AnsiConsole.Confirm($"Are you sure you want to delete the forward '{settings.Name}'?"))
-                return 0;
-        }
+        // Remove confirmation prompt entirely
+        // The -q/--quiet flag already exists to suppress output
 
         var (success, error) = await client.DeleteForwardAsync(settings.Name);
         
@@ -375,7 +371,11 @@ public class ForwardDeleteCommand : AsyncCommand<ForwardDeleteCommand.Settings>
                 AnsiConsole.MarkupLine($"[green]Forward '{settings.Name}' deleted successfully.[/]");
                 
             if (settings.Json)
-                Console.WriteLine($"{{ \"success\": true, \"name\": \"{settings.Name}\" }}");
+            {
+                var jsonObj = new { success = true, name = settings.Name };
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                Console.WriteLine(JsonSerializer.Serialize(jsonObj, options));
+            }
                 
             return 0;
         }
@@ -385,7 +385,11 @@ public class ForwardDeleteCommand : AsyncCommand<ForwardDeleteCommand.Settings>
                 AnsiConsole.MarkupLine($"[red]Failed to delete forward: {error}[/]");
                 
             if (settings.Json)
-                Console.WriteLine($"{{ \"success\": false, \"error\": \"{error}\" }}");
+            {
+                var jsonObj = new { success = false, error = error };
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                Console.WriteLine(JsonSerializer.Serialize(jsonObj, options));
+            }
                 
             return 1;
         }

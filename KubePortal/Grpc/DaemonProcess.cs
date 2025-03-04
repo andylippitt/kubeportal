@@ -155,6 +155,48 @@ public class DaemonProcess
         return Path.Combine(GetAppDataDirectory(), "daemon.log");
     }
 
+    // Add a start time file path method
+    private static string GetStartTimeFilePath()
+    {
+        return Path.Combine(GetAppDataDirectory(), "daemon-start-time.txt");
+    }
+
+    // Save start time when daemon starts
+    private static void SaveStartTime()
+    {
+        try
+        {
+            File.WriteAllText(GetStartTimeFilePath(), DateTime.UtcNow.ToString("o"));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to save start time: {ex.Message}");
+        }
+    }
+
+    // Get the start time from file
+    private static DateTime GetStartTime()
+    {
+        try
+        {
+            var path = GetStartTimeFilePath();
+            if (File.Exists(path))
+            {
+                var timeStr = File.ReadAllText(path);
+                if (DateTime.TryParse(timeStr, out var startTime))
+                {
+                    return startTime;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors, use current time as fallback
+        }
+        
+        return DateTime.UtcNow;
+    }
+
     // Run the daemon process
     public static async Task<int> RunDaemonAsync(int port, LogLevel logLevel)
     {
@@ -172,18 +214,34 @@ public class DaemonProcess
             return 1;
         }
         
+        // Save start time
+        SaveStartTime();
+        
         try
         {
-            // Set up logging
+            // Ensure log directory exists
+            var logFilePath = GetLogFilePath();
+            var logDir = Path.GetDirectoryName(logFilePath);
+            if (!string.IsNullOrEmpty(logDir) && !Directory.Exists(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+            
+            // Set up logging with correct verbosity mapping
             var loggerFactory = LoggerFactory.Create(builder =>
             {
                 builder.SetMinimumLevel(logLevel);
                 builder.AddConsole();
-                builder.AddFile(GetLogFilePath());
+                
+                // Configure file logging with correct message template and log rotation
+                builder.AddFile(GetLogFilePath(), options => {
+                    options.FileSizeLimitBytes = 10 * 1024 * 1024; // 10MB size limit
+                    options.MaxRollingFiles = 3; // Keep 3 archived log files
+                });
             });
             
             var logger = loggerFactory.CreateLogger<DaemonProcess>();
-            logger.LogInformation("Starting KubePortal daemon on port {Port}", port);
+            logger.LogInformation("Starting KubePortal daemon on port {Port} with log level {LogLevel}", port, logLevel);
             
             // Create the forward manager
             var forwardManager = new ForwardManager(GetConfigFilePath(), loggerFactory);
@@ -280,7 +338,7 @@ public class DaemonProcess
             var startInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = exePath,
-                Arguments = $"--internal-daemon-run --api-port {port} --verbosity {logLevel}",
+                Arguments = $"--internal-daemon-run --api-port {port} --verbosity {logLevel.ToString()}",
                 UseShellExecute = true,
                 CreateNoWindow = true,
                 WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
@@ -315,26 +373,36 @@ public class DaemonProcess
 // Extension method for file logging
 public static class LoggingExtensions
 {
-    public static ILoggingBuilder AddFile(this ILoggingBuilder builder, string filePath)
+    public static ILoggingBuilder AddFile(this ILoggingBuilder builder, string filePath, Action<FileLoggerOptions>? configure = null)
     {
-        builder.AddProvider(new FileLoggerProvider(filePath));
+        var options = new FileLoggerOptions();
+        configure?.Invoke(options);
+        builder.AddProvider(new FileLoggerProvider(filePath, options));
         return builder;
     }
+}
+
+public class FileLoggerOptions
+{
+    public long FileSizeLimitBytes { get; set; } = 5 * 1024 * 1024; // 5MB default
+    public int MaxRollingFiles { get; set; } = 3;
 }
 
 // Simple file logger implementation
 public class FileLoggerProvider : ILoggerProvider
 {
     private readonly string _filePath;
+    private readonly FileLoggerOptions _options;
 
-    public FileLoggerProvider(string filePath)
+    public FileLoggerProvider(string filePath, FileLoggerOptions options)
     {
         _filePath = filePath;
+        _options = options;
     }
 
     public ILogger CreateLogger(string categoryName)
     {
-        return new FileLogger(_filePath, categoryName);
+        return new FileLogger(_filePath, categoryName, _options);
     }
 
     public void Dispose()
@@ -346,12 +414,14 @@ public class FileLogger : ILogger
 {
     private readonly string _filePath;
     private readonly string _categoryName;
+    private readonly FileLoggerOptions _options;
     private static readonly object _lock = new object();
 
-    public FileLogger(string filePath, string categoryName)
+    public FileLogger(string filePath, string categoryName, FileLoggerOptions options)
     {
         _filePath = filePath;
         _categoryName = categoryName;
+        _options = options;
     }
 
     public IDisposable BeginScope<TState>(TState state) where TState : notnull
@@ -383,12 +453,49 @@ public class FileLogger : ILogger
 
             lock (_lock)
             {
+                // Check if log rotation is needed
+                var fileInfo = new FileInfo(_filePath);
+                if (fileInfo.Exists && fileInfo.Length > _options.FileSizeLimitBytes)
+                {
+                    RotateLogFiles();
+                }
+                
                 File.AppendAllText(_filePath, line + Environment.NewLine);
             }
         }
         catch
         {
             // Logging should never throw
+        }
+    }
+
+    private void RotateLogFiles()
+    {
+        try
+        {
+            // Remove oldest log file if max count reached
+            for (int i = _options.MaxRollingFiles; i > 0; i--)
+            {
+                string oldFile = $"{_filePath}.{i}";
+                if (File.Exists(oldFile) && i == _options.MaxRollingFiles)
+                {
+                    File.Delete(oldFile);
+                }
+                else if (File.Exists(oldFile))
+                {
+                    File.Move(oldFile, $"{_filePath}.{i + 1}");
+                }
+            }
+
+            // Rename current log file
+            if (File.Exists(_filePath))
+            {
+                File.Move(_filePath, $"{_filePath}.1");
+            }
+        }
+        catch
+        {
+            // Best effort for log rotation
         }
     }
 
