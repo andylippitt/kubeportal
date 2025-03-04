@@ -1,5 +1,6 @@
 {
   "name": "kubeportal-vscode",
+  "publisher": "andylippitt",
   "displayName": "KubePortal",
   "description": "Kubernetes port forwarding and TCP proxy management",
   "version": "0.1.0",

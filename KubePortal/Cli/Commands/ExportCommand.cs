@@ -31,17 +31,17 @@ public class ExportCommand : AsyncCommand<ExportCommand.Settings>
         try
         {
             string configJson = await client.ExportConfigAsync(settings.IncludeDisabled, settings.GroupFilter);
-            
-            if (settings.Json)
-            {
-                // Already JSON, so just output it directly
-                Console.WriteLine(configJson);
-            }
+
+            // deserialize and reserialize to format the JSON
+            configJson = System.Text.Json.JsonSerializer.Serialize(
+                System.Text.Json.JsonSerializer.Deserialize<object>(configJson),
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+            if (!settings.Json)
+                AnsiConsole.Render(new Markup(configJson));
             else
-            {
                 Console.WriteLine(configJson);
-            }
-            
+
             return 0;
         }
         catch (Exception ex)
@@ -49,8 +49,13 @@ public class ExportCommand : AsyncCommand<ExportCommand.Settings>
             if (!settings.Json)
                 AnsiConsole.MarkupLine($"[red]Failed to export configuration: {ex.Message}[/]");
             else
-                Console.WriteLine($"{{ \"success\": false, \"error\": \"{ex.Message.Replace("\"", "\\\"")}\" }}");
-                
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new {
+                    success = false,
+                    error = ex.Message
+                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            }
+
             return 1;
         }
     }
