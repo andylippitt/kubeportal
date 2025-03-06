@@ -1,0 +1,35 @@
+name: Publish Extension
+
+on:
+  workflow_dispatch:  # Allows manual triggering
+  push:
+    tags:
+      - 'v*' # Run when tag is pushed matching v*, like v1.0.0
+
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.18'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Navigate to extension directory
+        run: cd KubePortal.VSCode
+      
+      - name: Install dependencies
+        working-directory: KubePortal.VSCode
+        run: npm ci
+      
+      - name: Compile and package extension
+        working-directory: KubePortal.VSCode
+        run: npm run package
+      
+      - name: Publish to VS Code Marketplace
+        working-directory: KubePortal.VSCode
+        run: npx @vscode/vsce publish -p ${{ secrets.AZURE_MARKETPLACE_PAT }}
