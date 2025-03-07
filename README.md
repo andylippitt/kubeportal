@@ -2,8 +2,6 @@
 
 <div align="center">
 
-![KubePortal Logo](https://via.placeholder.com/150x150.png?text=KubePortal)
-
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC)](KubePortal.VSCode)
