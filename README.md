@@ -4,7 +4,7 @@
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
-[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC)](https://marketplace.visualstudio.com/items?itemName=violetdata.kubeportal-vscode) code (KubePortal.VSCode)
+[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC)](https://marketplace.visualstudio.com/items?itemName=violetdata.kubeportal-vscode)
 
 **Simplified port forwarding for Kubernetes and TCP sockets**
 
