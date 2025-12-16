@@ -258,6 +258,69 @@ Logs are stored in the following locations:
 - Verify your kubeconfig context: `kubectl config get-contexts`
 - Check service existence: `kubectl get svc -n <namespace>`
 
+## Replacing the running kubeportal binary
+
+If you need to replace the running daemon binary (for example, to test a freshly built single-file executable), follow these steps carefully. These instructions assume you have a built `kubeportal` executable from the `dotnet publish` step.
+
+1. Back up the existing binary (recommended):
+
+```bash
+sudo cp /usr/local/bin/kubeportal /usr/local/bin/kubeportal.bak.$(date +%s)
+```
+
+2. Publish a single-file Linux executable (from repo root):
+
+```bash
+dotnet publish KubePortal/KubePortal.csproj -c Release -r linux-x64 \
+  --self-contained true -p:PublishSingleFile=true -o KubePortal/bin/publish
+```
+
+3. Replace the binary atomically and set executable permission:
+
+```bash
+sudo cp KubePortal/bin/publish/kubeportal /usr/local/bin/kubeportal.new
+sudo chmod +x /usr/local/bin/kubeportal.new
+sudo mv /usr/local/bin/kubeportal.new /usr/local/bin/kubeportal
+```
+
+4. Restart the daemon. If the daemon was started manually, re-run the same command (example):
+
+```bash
+nohup /usr/local/bin/kubeportal --internal-daemon-run --api-port 50051 --verbosity Information \
+  > /tmp/kubeportal.log 2>&1 &
+```
+
+If the daemon is managed by a service manager (systemd, supervisord, etc.) use the appropriate service control command instead.
+
+5. Verify the daemon is running and responsive:
+
+```bash
+# Check process
+ps aux | grep -i kubeportal | grep -v grep
+
+# Use the CLI to list forwards
+/usr/local/bin/kubeportal forward list --api-port 50051 --json
+
+# Tail recent logs
+tail -n 200 /tmp/kubeportal.log
+```
+
+Safety notes
+- If the daemon is started by your environment or VS Code extension, prefer to stop it from there before replacing the binary to avoid race conditions.
+- Backing up the original binary ensures you can roll back quickly.
+
+Updating the DEMS devcontainer
+
+You may want the new `kubeportal` executable available inside the DEMS devcontainer for local development. To copy the binary into the DEMS repo devcontainer directory:
+
+```bash
+sudo cp /usr/local/bin/kubeportal /workspaces/DEMS/.devcontainer/kubeportal
+sudo chown $USER:$USER /workspaces/DEMS/.devcontainer/kubeportal
+chmod +x /workspaces/DEMS/.devcontainer/kubeportal
+```
+
+This is useful when the devcontainer init or helpers expect the binary to be present in the repo.
+
 ## Architecture
 
 KubePortal is built with a client-daemon architecture:

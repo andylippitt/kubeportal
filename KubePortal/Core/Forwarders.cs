@@ -153,11 +153,15 @@ public abstract class ForwarderBase : IForwarder
 public class KubernetesForwarder : ForwarderBase
 {
     private readonly KubernetesForwardDefinition _k8sDefinition;
+    private readonly KubernetesCache _cache;
+    private readonly ILoggerFactory _loggerFactory;
 
     public KubernetesForwarder(KubernetesForwardDefinition definition, ILoggerFactory loggerFactory)
         : base(definition, loggerFactory)
     {
         _k8sDefinition = definition;
+        _loggerFactory = loggerFactory;
+        _cache = KubernetesCacheProvider.GetInstance(loggerFactory);
     }
 
     protected override async Task ProcessClientConnectionAsync(
@@ -170,18 +174,14 @@ public class KubernetesForwarder : ForwarderBase
         {
             using var clientStream = client.GetStream();
 
-            // Create Kubernetes client
-            var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
-                currentContext: _k8sDefinition.Context);
-            using var k8sClient = new Kubernetes(config);
+            // Get cached Kubernetes client and pods
+            var k8sClient = _cache.GetClient(_k8sDefinition.Context);
 
-            // Get service and resolve to pods
-            var service = await k8sClient.CoreV1.ReadNamespacedServiceAsync(
-                _k8sDefinition.Service,
+            var pods = await _cache.GetPodsForServiceAsync(
+                _k8sDefinition.Context,
                 _k8sDefinition.Namespace,
-                cancellationToken: token);
-
-            var pods = await ResolveServiceToPodsAsync(k8sClient, _k8sDefinition.Namespace, service, token);
+                _k8sDefinition.Service,
+                token);
 
             if (pods.Count == 0)
             {
@@ -230,20 +230,6 @@ public class KubernetesForwarder : ForwarderBase
             client.Dispose();
             _activeConnections.TryRemove(connectionId, out _);
         }
-    }
-
-    private async Task<IList<V1Pod>> ResolveServiceToPodsAsync(
-        IKubernetes client, string ns, V1Service service, CancellationToken token)
-    {
-        var labelSelector = string.Join(",",
-            service.Spec.Selector.Select(kv => $"{kv.Key}={kv.Value}"));
-
-        var podList = await client.CoreV1.ListNamespacedPodAsync(
-            ns,
-            labelSelector: labelSelector,
-            cancellationToken: token);
-
-        return podList.Items;
     }
 
     private Task CopyStreamAsync(Stream source, Stream destination, CancellationToken token)
