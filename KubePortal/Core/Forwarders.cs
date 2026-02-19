@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using k8s;
@@ -81,6 +82,7 @@ public abstract class ForwarderBase : IForwarder
             while (!_cts.IsCancellationRequested)
             {
                 var client = await _listener!.AcceptTcpClientAsync(_cts.Token);
+                client.NoDelay = true; // Disable Nagle's algorithm to reduce latency
                 var connectionId = Guid.NewGuid();
 
                 // Process in background
@@ -167,6 +169,7 @@ public class KubernetesForwarder : ForwarderBase
     protected override async Task ProcessClientConnectionAsync(
         TcpClient client, Guid connectionId, CancellationToken token)
     {
+        var totalSw = Stopwatch.StartNew();
         _logger.LogDebug("Processing connection {ConnectionId} for {Name}",
             connectionId, _definition.Name);
 
@@ -175,13 +178,19 @@ public class KubernetesForwarder : ForwarderBase
             using var clientStream = client.GetStream();
 
             // Get cached Kubernetes client and pods
+            var sw = Stopwatch.StartNew();
             var k8sClient = _cache.GetClient(_k8sDefinition.Context);
+            sw.Stop();
+            _logger.LogDebug("[Timing] GetClient: {Elapsed}ms", sw.ElapsedMilliseconds);
 
+            sw.Restart();
             var pods = await _cache.GetPodsForServiceAsync(
                 _k8sDefinition.Context,
                 _k8sDefinition.Namespace,
                 _k8sDefinition.Service,
                 token);
+            sw.Stop();
+            _logger.LogDebug("[Timing] GetPodsForService: {Elapsed}ms", sw.ElapsedMilliseconds);
 
             if (pods.Count == 0)
             {
@@ -196,26 +205,33 @@ public class KubernetesForwarder : ForwarderBase
             _logger.LogDebug("Forwarding connection to pod {Pod}:{Port}",
                 pod.Metadata.Name, _k8sDefinition.ServicePort);
 
+            sw.Restart();
             using var webSocket = await k8sClient.WebSocketNamespacedPodPortForwardAsync(
                 pod.Metadata.Name,
                 _k8sDefinition.Namespace,
                 new int[] { _k8sDefinition.ServicePort },
                 "v4.channel.k8s.io",
                 cancellationToken: token);
+            sw.Stop();
+            _logger.LogDebug("[Timing] WebSocket port-forward setup: {Elapsed}ms", sw.ElapsedMilliseconds);
 
             using var demux = new StreamDemuxer(webSocket, StreamType.PortForward);
             demux.Start();
 
             using var serverStream = demux.GetStream((byte?)0, (byte?)0);
 
-            // Set up bidirectional copy
+            _logger.LogDebug("[Timing] Total setup before data relay: {Elapsed}ms", totalSw.ElapsedMilliseconds);
+
+            // Set up bidirectional copy; StreamDemuxer requires blocking I/O inside Task.Run
             var serverToClient = CopyStreamAsync(serverStream, clientStream, token);
             var clientToServer = CopyStreamAsync(clientStream, serverStream, token);
 
             // Wait until either direction completes or gets canceled
             await Task.WhenAny(serverToClient, clientToServer);
 
-            _logger.LogDebug("Connection {ConnectionId} completed", connectionId);
+            totalSw.Stop();
+            _logger.LogDebug("[Timing] Connection {ConnectionId} total: {Elapsed}ms",
+                connectionId, totalSw.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -234,21 +250,17 @@ public class KubernetesForwarder : ForwarderBase
 
     private Task CopyStreamAsync(Stream source, Stream destination, CancellationToken token)
     {
+        // StreamDemuxer requires blocking I/O - use Task.Run with synchronous read/write
         return Task.Run(() =>
         {
             using var registration = token.Register(() =>
             {
-                try
-                {
-                    // Force stream closure on cancellation
-                    source.Close();
-                }
+                try { source.Close(); }
                 catch { /* Ignore */ }
             });
 
             try
             {
-                // Register for bytes read
                 var buffer = new byte[81920];
                 int bytesRead;
                 while ((bytesRead = source.Read(buffer, 0, buffer.Length)) > 0)
@@ -257,10 +269,7 @@ public class KubernetesForwarder : ForwarderBase
                     UpdateBytesTransferred(bytesRead);
                 }
             }
-            catch (OperationCanceledException)
-            {
-                // Expected during cancellation
-            }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 if (!token.IsCancellationRequested)
