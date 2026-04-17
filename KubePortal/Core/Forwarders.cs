@@ -223,11 +223,17 @@ public class KubernetesForwarder : ForwarderBase
             _logger.LogDebug("[Timing] Total setup before data relay: {Elapsed}ms", totalSw.ElapsedMilliseconds);
 
             // Set up bidirectional copy; StreamDemuxer requires blocking I/O inside Task.Run
-            var serverToClient = CopyStreamAsync(serverStream, clientStream, token);
-            var clientToServer = CopyStreamAsync(clientStream, serverStream, token);
+            using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
-            // Wait until either direction completes or gets canceled
+            var serverToClient = CopyStreamAsync(serverStream, clientStream, connectionCts.Token);
+            var clientToServer = CopyStreamAsync(clientStream, serverStream, connectionCts.Token);
+
             await Task.WhenAny(serverToClient, clientToServer);
+            connectionCts.Cancel();
+
+            // Brief drain for the other direction to finish cleanly
+            try { await Task.WhenAll(serverToClient, clientToServer).WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch { /* drain best-effort */ }
 
             totalSw.Stop();
             _logger.LogDebug("[Timing] Connection {ConnectionId} total: {Elapsed}ms",
@@ -299,12 +305,14 @@ public class SocketProxyForwarder : ForwarderBase
 
         try
         {
-            // Connect to remote endpoint
-            remoteClient = new TcpClient();
+            // Connect to remote endpoint with timeout
+            remoteClient = new TcpClient { NoDelay = true };
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            connectCts.CancelAfter(TimeSpan.FromSeconds(5));
             await remoteClient.ConnectAsync(
                 _socketDefinition.RemoteHost,
                 _socketDefinition.RemotePort,
-                token);
+                connectCts.Token);
 
             _logger.LogDebug("Connected to remote endpoint {Host}:{Port}",
                 _socketDefinition.RemoteHost, _socketDefinition.RemotePort);
@@ -312,12 +320,18 @@ public class SocketProxyForwarder : ForwarderBase
             using var clientStream = client.GetStream();
             using var remoteStream = remoteClient.GetStream();
 
-            // Set up bidirectional copy
-            var remoteToClient = CopyStreamAsync(remoteStream, clientStream, token);
-            var clientToRemote = CopyStreamAsync(clientStream, remoteStream, token);
+            // Linked CTS so both directions cancel when either finishes
+            using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
-            // Wait until either direction completes or gets canceled
+            var remoteToClient = CopyStreamAsync(remoteStream, clientStream, connectionCts.Token);
+            var clientToRemote = CopyStreamAsync(clientStream, remoteStream, connectionCts.Token);
+
             await Task.WhenAny(remoteToClient, clientToRemote);
+            connectionCts.Cancel();
+
+            // Brief drain for the other direction to finish cleanly
+            try { await Task.WhenAll(remoteToClient, clientToRemote).WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch { /* drain best-effort */ }
 
             _logger.LogDebug("Connection {ConnectionId} completed", connectionId);
         }
