@@ -184,32 +184,31 @@ public class KubernetesForwarder : ForwarderBase
             _logger.LogDebug("[Timing] GetClient: {Elapsed}ms", sw.ElapsedMilliseconds);
 
             sw.Restart();
-            var pods = await _cache.GetPodsForServiceAsync(
+            var endpoint = await _cache.ResolveEndpointAsync(
                 _k8sDefinition.Context,
                 _k8sDefinition.Namespace,
                 _k8sDefinition.Service,
+                _k8sDefinition.ServicePort,
                 token);
             sw.Stop();
-            _logger.LogDebug("[Timing] GetPodsForService: {Elapsed}ms", sw.ElapsedMilliseconds);
+            _logger.LogDebug("[Timing] ResolveEndpoint: {Elapsed}ms", sw.ElapsedMilliseconds);
 
-            if (pods.Count == 0)
+            if (endpoint is null)
             {
-                _logger.LogError("No pods found for service {Service} in namespace {Namespace}",
-                    _k8sDefinition.Service, _k8sDefinition.Namespace);
+                // ResolveEndpointAsync already logged the specific reason.
                 return;
             }
 
-            // Use first pod for the port forward
-            var pod = pods[0];
+            var pod = endpoint.Pod;
 
-            _logger.LogDebug("Forwarding connection to pod {Pod}:{Port}",
-                pod.Metadata.Name, _k8sDefinition.ServicePort);
+            _logger.LogDebug("Forwarding connection to pod {Pod}:{Port} (service port {ServicePort})",
+                pod.Metadata.Name, endpoint.TargetPort, _k8sDefinition.ServicePort);
 
             sw.Restart();
             using var webSocket = await k8sClient.WebSocketNamespacedPodPortForwardAsync(
                 pod.Metadata.Name,
                 _k8sDefinition.Namespace,
-                new int[] { _k8sDefinition.ServicePort },
+                new int[] { endpoint.TargetPort },
                 "v4.channel.k8s.io",
                 cancellationToken: token);
             sw.Stop();
@@ -219,6 +218,12 @@ public class KubernetesForwarder : ForwarderBase
             demux.Start();
 
             using var serverStream = demux.GetStream((byte?)0, (byte?)0);
+
+            // Channel 1 carries kubelet's port-forward errors (e.g. "connection refused").
+            // Without draining it the client just sees an empty reply and nothing is logged.
+            var errorStream = demux.GetStream((byte?)1, (byte?)1);
+            _ = RunOnDedicatedThread($"pf-err-{_definition.Name}",
+                () => DrainErrorStream(errorStream, pod.Metadata.Name, endpoint.TargetPort));
 
             _logger.LogDebug("[Timing] Total setup before data relay: {Elapsed}ms", totalSw.ElapsedMilliseconds);
 
@@ -254,10 +259,39 @@ public class KubernetesForwarder : ForwarderBase
         }
     }
 
+    private void DrainErrorStream(Stream errorStream, string podName, int targetPort)
+    {
+        try
+        {
+            var buffer = new byte[4096];
+            var message = new System.Text.StringBuilder();
+            int read;
+            while ((read = errorStream.Read(buffer, 0, buffer.Length)) > 0)
+                message.Append(System.Text.Encoding.UTF8.GetString(buffer, 0, read));
+
+            var text = message.ToString().Trim();
+            if (text.Length > 0)
+                _logger.LogError("Port-forward error from {Pod}:{Port} ({Name}): {Message}",
+                    podName, targetPort, _definition.Name, text);
+        }
+        catch
+        {
+            // Stream torn down with the connection - nothing useful to report.
+        }
+        finally
+        {
+            try { errorStream.Dispose(); } catch { /* best effort */ }
+        }
+    }
+
     private Task CopyStreamAsync(Stream source, Stream destination, CancellationToken token)
     {
-        // StreamDemuxer requires blocking I/O - use Task.Run with synchronous read/write
-        return Task.Run(() =>
+        // StreamDemuxer only exposes blocking I/O, and these loops stay blocked for the
+        // whole life of the connection. Running them on the thread pool starves it: the
+        // pool only injects new threads once or twice a second, so a burst of parallel
+        // requests (a Grafana dashboard, say) stalls for 10-15s until enough threads
+        // exist. Dedicated threads are created immediately, so bursts stay fast.
+        return RunOnDedicatedThread($"copy-{_definition.Name}", () =>
         {
             using var registration = token.Register(() =>
             {
@@ -281,7 +315,23 @@ public class KubernetesForwarder : ForwarderBase
                 if (!token.IsCancellationRequested)
                     _logger.LogError(ex, "Error copying stream");
             }
-        }, token);
+        });
+    }
+
+    private static Task RunOnDedicatedThread(string name, Action action)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try { action(); tcs.TrySetResult(); }
+            catch (Exception ex) { tcs.TrySetException(ex); }
+        })
+        {
+            IsBackground = true,
+            Name = name,
+        };
+        thread.Start();
+        return tcs.Task;
     }
 }
 

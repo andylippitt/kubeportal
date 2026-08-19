@@ -13,6 +13,7 @@ public class KubernetesCache : IDisposable
 {
     private readonly ConcurrentDictionary<string, CachedClient> _clients = new();
     private readonly ConcurrentDictionary<string, CachedPodList> _podCache = new();
+    private readonly ConcurrentDictionary<string, CachedService> _serviceCache = new();
     private readonly ILogger<KubernetesCache> _logger;
     private readonly TimeSpan _clientTtl = TimeSpan.FromMinutes(10);
     private readonly TimeSpan _podCacheTtl = TimeSpan.FromSeconds(30);
@@ -55,11 +56,110 @@ public class KubernetesCache : IDisposable
     }
 
     /// <summary>
+    /// Resolves a service + service port to a concrete pod and the container port that
+    /// actually accepts traffic. Mirrors what `kubectl port-forward svc/...` does: the
+    /// service's targetPort (numeric or named) is translated against the pod's container
+    /// ports. Forwarding the *service* port straight at the pod silently fails whenever
+    /// port != targetPort.
+    /// </summary>
+    public async Task<ResolvedEndpoint?> ResolveEndpointAsync(
+        string context,
+        string ns,
+        string serviceName,
+        int servicePort,
+        CancellationToken token)
+    {
+        var svc = await GetServiceAsync(context, ns, serviceName, token);
+
+        var pods = await GetPodsForServiceAsync(context, ns, serviceName, token);
+        if (pods.Count == 0)
+        {
+            _logger.LogError("No ready/running pods found for service '{Service}' in namespace '{Namespace}'",
+                serviceName, ns);
+            return null;
+        }
+
+        var pod = pods[0];
+
+        var targetPort = TranslateServicePort(svc, servicePort, pod, serviceName, _logger);
+        if (targetPort is null)
+            return null;
+
+        return new ResolvedEndpoint(pod, targetPort.Value);
+    }
+
+    /// <summary>
+    /// Translates a service port to the pod container port, following the same rules as kubectl:
+    /// missing targetPort == the service port, numeric targetPort used as-is, named targetPort
+    /// looked up in the pod's container ports.
+    /// </summary>
+    public static int? TranslateServicePort(V1Service svc, int servicePort, V1Pod pod, string serviceName, ILogger? logger = null)
+    {
+        var portSpec = svc.Spec?.Ports?.FirstOrDefault(p => p.Port == servicePort);
+        if (portSpec == null)
+        {
+            logger?.LogError(
+                "Service '{Service}' does not expose port {Port} (exposes: {Exposed}); forwarding to pod port {Port} as-is",
+                serviceName, servicePort,
+                string.Join(", ", svc.Spec?.Ports?.Select(p => p.Port.ToString()) ?? Enumerable.Empty<string>()),
+                servicePort);
+            return servicePort;
+        }
+
+        var target = portSpec.TargetPort;
+
+        // IntstrIntOrString carries either a number or a port name as a string.
+        var name = target?.Value;
+
+        // No targetPort set -> defaults to the service port.
+        if (string.IsNullOrEmpty(name))
+            return servicePort;
+
+        if (int.TryParse(name, out var numeric))
+            return numeric;
+
+        // Named port: resolve against the pod's container ports.
+        var containerPort = pod.Spec?.Containers
+            ?.SelectMany(c => c.Ports ?? new List<V1ContainerPort>())
+            .FirstOrDefault(cp => string.Equals(cp.Name, name, StringComparison.Ordinal));
+
+        if (containerPort == null)
+        {
+            logger?.LogError(
+                "Service '{Service}' port {Port} targets named port '{Name}', but pod '{Pod}' declares no such container port",
+                serviceName, servicePort, name, pod.Metadata?.Name);
+            return null;
+        }
+
+        logger?.LogDebug("Resolved service '{Service}' port {Port} -> named targetPort '{Name}' -> container port {Container}",
+            serviceName, servicePort, name, containerPort.ContainerPort);
+
+        return containerPort.ContainerPort;
+    }
+
+    /// <summary>
+    /// Gets the service definition, using cache when available.
+    /// </summary>
+    private async Task<V1Service> GetServiceAsync(
+        string context, string ns, string serviceName, CancellationToken token)
+    {
+        var cacheKey = $"{context}:{ns}:{serviceName}";
+
+        if (_serviceCache.TryGetValue(cacheKey, out var cachedSvc) && !cachedSvc.IsExpired)
+            return cachedSvc.Service;
+
+        var client = GetClient(context);
+        var svc = await client.CoreV1.ReadNamespacedServiceAsync(serviceName, ns, cancellationToken: token);
+        _serviceCache[cacheKey] = new CachedService(svc, _podCacheTtl);
+        return svc;
+    }
+
+    /// <summary>
     /// Gets pods for a service, using cache when available.
     /// </summary>
     public async Task<IList<V1Pod>> GetPodsForServiceAsync(
         string context,
-        string ns, 
+        string ns,
         string serviceName,
         CancellationToken token)
     {
@@ -67,29 +167,24 @@ public class KubernetesCache : IDisposable
 
         if (_podCache.TryGetValue(cacheKey, out var cached) && !cached.IsExpired)
         {
-            _logger.LogDebug("Using cached pod list for service '{Service}' ({Count} pods)", 
+            _logger.LogDebug("Using cached pod list for service '{Service}' ({Count} pods)",
                 serviceName, cached.Pods.Count);
             return cached.Pods;
         }
 
         // Fetch fresh data
-        _logger.LogDebug("Fetching pods for service '{Service}' in namespace '{Namespace}'", 
+        _logger.LogDebug("Fetching pods for service '{Service}' in namespace '{Namespace}'",
             serviceName, ns);
-        
-        var client = GetClient(context);
-        
-        var service = await client.CoreV1.ReadNamespacedServiceAsync(
-            serviceName,
-            ns,
-            cancellationToken: token);
 
-        var pods = await ResolveServiceToPodsAsync(client, ns, service, token);
-        
+        var service = await GetServiceAsync(context, ns, serviceName, token);
+
+        var pods = await ResolveServiceToPodsAsync(GetClient(context), ns, service, token);
+
         // Cache the result
         _podCache[cacheKey] = new CachedPodList(pods, _podCacheTtl);
-        
+
         _logger.LogDebug("Cached {Count} pods for service '{Service}'", pods.Count, serviceName);
-        
+
         return pods;
     }
 
@@ -99,6 +194,7 @@ public class KubernetesCache : IDisposable
     public void InvalidatePodCache()
     {
         _podCache.Clear();
+        _serviceCache.Clear();
         _logger.LogInformation("Pod cache invalidated");
     }
 
@@ -108,6 +204,7 @@ public class KubernetesCache : IDisposable
     public void InvalidatePodCache(string context, string ns, string serviceName)
     {
         var cacheKey = $"{context}:{ns}:{serviceName}";
+        _serviceCache.TryRemove(cacheKey, out _);
         if (_podCache.TryRemove(cacheKey, out _))
         {
             _logger.LogDebug("Invalidated pod cache for service '{Service}'", serviceName);
@@ -130,11 +227,18 @@ public class KubernetesCache : IDisposable
             labelSelector: labelSelector,
             cancellationToken: token);
 
-        // Filter to only running pods
-        return podList.Items
-            .Where(p => p.Status?.Phase == "Running")
+        var running = podList.Items
+            .Where(p => p.Status?.Phase == "Running" && p.Metadata?.DeletionTimestamp == null)
             .ToList();
+
+        // Prefer pods that pass their readiness probe; a Running-but-unready pod
+        // (still starting, or failing health checks) refuses connections.
+        var ready = running.Where(IsReady).ToList();
+        return ready.Count > 0 ? ready : running;
     }
+
+    private static bool IsReady(V1Pod pod) =>
+        pod.Status?.Conditions?.Any(c => c.Type == "Ready" && c.Status == "True") == true;
 
     private void CleanupExpiredEntries(object? state)
     {
@@ -164,6 +268,11 @@ public class KubernetesCache : IDisposable
             _podCache.TryRemove(key, out _);
         }
 
+        foreach (var key in _serviceCache.Where(kvp => kvp.Value.IsExpired).Select(kvp => kvp.Key).ToList())
+        {
+            _serviceCache.TryRemove(key, out _);
+        }
+
         if (expiredClientKeys.Count > 0 || expiredPodKeys.Count > 0)
         {
             _logger.LogDebug("Cache cleanup: removed {Clients} clients, {Pods} pod entries",
@@ -184,6 +293,7 @@ public class KubernetesCache : IDisposable
         }
         _clients.Clear();
         _podCache.Clear();
+        _serviceCache.Clear();
     }
 
     private class CachedClient
@@ -195,6 +305,19 @@ public class KubernetesCache : IDisposable
         public CachedClient(IKubernetes client, TimeSpan ttl)
         {
             Client = client;
+            ExpiresAt = DateTime.UtcNow + ttl;
+        }
+    }
+
+    private class CachedService
+    {
+        public V1Service Service { get; }
+        public DateTime ExpiresAt { get; }
+        public bool IsExpired => DateTime.UtcNow > ExpiresAt;
+
+        public CachedService(V1Service service, TimeSpan ttl)
+        {
+            Service = service;
             ExpiresAt = DateTime.UtcNow + ttl;
         }
     }
@@ -212,6 +335,11 @@ public class KubernetesCache : IDisposable
         }
     }
 }
+
+/// <summary>
+/// A service resolved down to the pod and container port that will actually accept traffic.
+/// </summary>
+public record ResolvedEndpoint(V1Pod Pod, int TargetPort);
 
 /// <summary>
 /// Singleton provider for the Kubernetes cache.
