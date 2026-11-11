@@ -200,6 +200,12 @@ public class DaemonProcess
     // Run the daemon process
     public static async Task<int> RunDaemonAsync(int port, LogLevel logLevel)
     {
+        // Safety net for the rest of the pool's blocking work: the default minimum is
+        // Environment.ProcessorCount and growth beyond it is throttled to ~1 thread/sec,
+        // which turns a burst of parallel connections into a multi-second stall.
+        ThreadPool.GetMinThreads(out var minWorker, out var minIo);
+        ThreadPool.SetMinThreads(Math.Max(minWorker, 64), Math.Max(minIo, 64));
+
         // Check if daemon is already running on this port
         if (await IsDaemonRunningAsync(port))
         {
