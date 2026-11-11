@@ -15,44 +15,75 @@ public class KubernetesCache : IDisposable
     private readonly ConcurrentDictionary<string, CachedPodList> _podCache = new();
     private readonly ConcurrentDictionary<string, CachedService> _serviceCache = new();
     private readonly ILogger<KubernetesCache> _logger;
-    private readonly TimeSpan _clientTtl = TimeSpan.FromMinutes(10);
+    private readonly TimeSpan _clientTtl;
+    private readonly TimeSpan _retiredClientGrace;
     private readonly TimeSpan _podCacheTtl = TimeSpan.FromSeconds(30);
+    private readonly Func<string, IKubernetes> _clientFactory;
+    private readonly object _clientLock = new();
     private readonly Timer _cleanupTimer;
     private bool _disposed;
 
     public KubernetesCache(ILoggerFactory loggerFactory)
+        : this(loggerFactory,
+               context => new Kubernetes(KubernetesClientConfiguration.BuildConfigFromConfigFile(currentContext: context)),
+               clientTtl: TimeSpan.FromMinutes(10),
+               retiredClientGrace: TimeSpan.FromMinutes(2))
+    {
+    }
+
+    /// <summary>
+    /// Test seam: the client factory and lifetimes are injectable so the replacement
+    /// path can be exercised without a cluster or a ten-minute wait.
+    /// </summary>
+    public KubernetesCache(ILoggerFactory loggerFactory, Func<string, IKubernetes> clientFactory,
+        TimeSpan clientTtl, TimeSpan retiredClientGrace)
     {
         _logger = loggerFactory.CreateLogger<KubernetesCache>();
+        _clientFactory = clientFactory;
+        _clientTtl = clientTtl;
+        _retiredClientGrace = retiredClientGrace;
         _cleanupTimer = new Timer(CleanupExpiredEntries, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
 
     /// <summary>
     /// Gets or creates a cached Kubernetes client for the specified context.
+    ///
+    /// A client handed out here may be mid-request on another connection, so it is never
+    /// disposed on the spot. The old code let every caller that missed the cache build its
+    /// own client and dispose the one it replaced: when the TTL lapsed under a burst of
+    /// connections (a Grafana dashboard opening, say), callers disposed each other's
+    /// clients and in-flight service/pod lookups died with TaskCanceledException, which
+    /// the forwarder logs only at Debug, so the client just saw an empty reply. Now one
+    /// caller per context builds the client, and the one it replaces is retired and
+    /// disposed after a grace period longer than any connection setup.
     /// </summary>
     public IKubernetes GetClient(string context)
     {
-        var key = context;
-        
-        if (_clients.TryGetValue(key, out var cached) && !cached.IsExpired)
-        {
-            _logger.LogDebug("Using cached Kubernetes client for context '{Context}'", context);
+        if (_clients.TryGetValue(context, out var cached) && !cached.IsExpired)
             return cached.Client;
-        }
 
-        // Create new client
-        _logger.LogDebug("Creating new Kubernetes client for context '{Context}'", context);
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(currentContext: context);
-        var client = new Kubernetes(config);
-        
-        var newCached = new CachedClient(client, _clientTtl);
-        _clients.AddOrUpdate(key, newCached, (_, old) =>
+        lock (_clientLock)
         {
-            // Dispose old client if we're replacing it
-            old.Client.Dispose();
-            return newCached;
-        });
+            // Another caller may have refreshed it while we waited for the lock.
+            if (_clients.TryGetValue(context, out cached) && !cached.IsExpired)
+                return cached.Client;
 
-        return client;
+            _logger.LogDebug("Creating new Kubernetes client for context '{Context}'", context);
+            var fresh = new CachedClient(_clientFactory(context), _clientTtl);
+            _clients[context] = fresh;
+            if (cached != null)
+                RetireClient(cached.Client, context);
+            return fresh.Client;
+        }
+    }
+
+    private void RetireClient(IKubernetes client, string context)
+    {
+        _ = Task.Delay(_retiredClientGrace).ContinueWith(_ =>
+        {
+            try { client.Dispose(); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Disposing retired client for '{Context}'", context); }
+        }, TaskScheduler.Default);
     }
 
     /// <summary>
@@ -242,18 +273,18 @@ public class KubernetesCache : IDisposable
 
     private void CleanupExpiredEntries(object? state)
     {
-        // Clean up expired clients
-        var expiredClientKeys = _clients
-            .Where(kvp => kvp.Value.IsExpired)
-            .Select(kvp => kvp.Key)
-            .ToList();
-
-        foreach (var key in expiredClientKeys)
+        // Clean up expired clients. Retired, not disposed: a connection may have fetched
+        // this client just before it expired and still be using it.
+        var expiredClientKeys = new List<string>();
+        lock (_clientLock)
         {
-            if (_clients.TryRemove(key, out var removed))
+            foreach (var kvp in _clients.Where(kvp => kvp.Value.IsExpired).ToList())
             {
-                removed.Client.Dispose();
-                _logger.LogDebug("Removed expired Kubernetes client for context '{Context}'", key);
+                if (_clients.TryRemove(new KeyValuePair<string, CachedClient>(kvp.Key, kvp.Value)))
+                {
+                    expiredClientKeys.Add(kvp.Key);
+                    RetireClient(kvp.Value.Client, kvp.Key);
+                }
             }
         }
 
